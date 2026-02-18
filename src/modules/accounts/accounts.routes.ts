@@ -1,10 +1,12 @@
 import { Router } from 'express';
-import { handleCreateAccount, handleGetAccountById, handleGetAccountBalance } from './accounts.controller';
+import { handleCreateAccount, handleGetAccountById, handleGetAccountBalanceForUser, handleTransfer } from './accounts.controller';
+import { authenticate } from '../auth/auth.middleware';
 
 const router = Router();
 
-router.post('/', handleCreateAccount);
-router.get('/:id', handleGetAccountById);
-router.get('/:id/balance', handleGetAccountBalance);
+router.post('/', authenticate, handleCreateAccount);
+router.post('/transfer', authenticate, handleTransfer);
+router.get('/:id', authenticate, handleGetAccountById);
+router.get('/:id/balance', authenticate, handleGetAccountBalanceForUser);
 
 export default router;
