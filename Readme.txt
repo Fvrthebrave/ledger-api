@@ -1,5 +1,11 @@
 # Ledger API
 
+A transactional financial ledger system demonstrating atomic transfers, 
+idempotency, and row-level locking in Node.js + PostgreSQL.
+
+📘 **Live Documentation:**  
+https://your-vercel-link.vercel.app
+
 A modular Node.js + TypeScript REST API demonstrating:
 
 - User authentication (JWT + bcrypt)
