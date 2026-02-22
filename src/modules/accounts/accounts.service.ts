@@ -1,9 +1,14 @@
 import { pool } from '../../config/db';
 
+export class InvalidTransferError extends Error {}
+export class InsufficientFundsError extends Error {}
+export class AccountNotFoundError extends Error {}
+export class DuplicateTransferError extends Error {}
+
 export async function createAccount(userId: number, name: string) {
   const result = await pool.query(`
-    INSERT INTO accounts (user_id, name)
-    VALUES ($1, $2)
+    INSERT INTO accounts (user_id, name, balance_cents)
+    VALUES ($1, $2, 0)
     RETURNING *`,
     [userId, name]
   );
@@ -21,21 +26,17 @@ export async function getAccountById(accountId: number) {
 }
 
 export async function getAccountBalanceForUser(accountId: number, userId: number) {
-  try {
-    const result = await pool.query(`
-      SELECT balance
-      FROM accounts
-      WHERE id = $1 AND user_id = $2`,
-      [accountId, userId]
-    );
+  const result = await pool.query(`
+    SELECT balance_cents
+    FROM accounts
+    WHERE id = $1 AND user_id = $2`,
+    [accountId, userId]
+  );
 
-    if(result.rowCount === 0) {
-      throw new Error('Unauthorized or invalid account');
-    }
-    return result.rows[0].balance;
-  } catch(err: any) {
-    throw err;
+  if(result.rowCount === 0) {
+    throw new AccountNotFoundError('Unauthorized or invalid account');
   }
+  return result.rows[0].balance_cents;
 }
 
 export async function transferBetweenAccounts(
@@ -43,14 +44,15 @@ export async function transferBetweenAccounts(
   fromAccountId: number,
   toAccountId: number,
   userId: number,
-  amount: number
+  amountCents: number
 ) {
+  
   if(fromAccountId === toAccountId) {
-    throw new Error('Cannot transfer to the same account');
+    throw new InvalidTransferError('Cannot transfer to the same account');
   }
 
-  if(amount <= 0) {
-    throw new Error('Amount must be greater than zero');
+  if(!Number.isInteger(amountCents) || amountCents <= 0) {
+    throw new InvalidTransferError('Amount must be a positive integer (cents)');
   }
 
   const client = await pool.connect();
@@ -60,18 +62,28 @@ export async function transferBetweenAccounts(
 
     const transferInsert = await client.query(
       `
-      INSERT into transfers (id, user_id, from_account_id, to_account_id, amount)
+      INSERT INTO transfers (
+        external_transfer_id,
+        user_id
+        from_account_id,
+        to_account_id,
+        amount_cents
+      )
       VALUES ($1, $2, $3, $4, $5)
-      ON CONFLICT (id) DO NOTHING
-      RETURNING *
+      ON CONFLICT (external_transfer_id)
+      DO NOTHING
+      RETURNING id
       `,
-      [transferId, userId, fromAccountId, toAccountId, amount]
-    )
+      [transferId, userId, fromAccountId, toAccountId, amountCents]
+    );
 
-    if(transferInsert.rowCount === 0) {
+    if (transferInsert.rowCount === 0) {
+      // Already exists — return success safely
       await client.query('ROLLBACK');
-      return { message: 'Transfer already processed' }
+      return { message: 'Transfer already processed' };
     }
+
+    const internalTransferId = transferInsert.rows[0].id;
 
     // Lock both accounts in consistent order.
     const [firstId, secondId] =
@@ -79,68 +91,70 @@ export async function transferBetweenAccounts(
     ? [fromAccountId, toAccountId]
     : [toAccountId, fromAccountId];
 
-
-    console.log('Locking accounts...');
-    await client.query(
-      `SELECT id FROM accounts WHERE id IN ($1, $2) FOR UPDATE`,
-      [firstId, secondId]
+    const lockRes = await client.query(
+      `SELECT id FROM accounts WHERE id IN ($1, $2) 
+       AND user_id = $3
+       ORDER BY id
+       FOR UPDATE
+      `,
+      [firstId, secondId, userId]
     );
 
-    console.log('Debiting...');
+    if (lockRes.rowCount !== 2) {
+      throw new AccountNotFoundError('One or both accounts not found or unauthorized');
+    }
+
     const debitResult = await client.query(
       `
-      UPDATE accounts SET balance = balance - $1
+      UPDATE accounts SET balance_cents = balance_cents - $1
       WHERE id = $2
         AND user_id = $3
-        AND balance >= $1
+        AND balance_cents >= $1
         RETURNING *
       `,
-      [amount, fromAccountId, userId]
+      [amountCents, fromAccountId, userId]
     );
 
     if(debitResult.rowCount === 0) {
-      throw new Error('Unauthorized or insufficient funds');
+      throw new InsufficientFundsError('Unauthorized or insufficient funds');
     }
 
-    console.log('Crediting...');
     const creditResult = await client.query(
       `
       UPDATE accounts
-      SET balance = balance + $1
+      SET balance_cents = balance_cents + $1
       WHERE id = $2
         AND user_id = $3
       RETURNING *
       `,
-      [amount, toAccountId, userId]
+      [amountCents, toAccountId, userId]
     );
 
     if(creditResult.rowCount === 0) {
-      throw new Error('Destination account not found');
+      throw new AccountNotFoundError('Destination account not found');
     }
 
-
-    console.log('Inserting ledger...');
     await client.query(
       `
-      INSERT INTO transactions (account_id, amount, type)
+      INSERT INTO transactions (account_id, amount_cents, type, transfer_id)
       VALUES ($1, $2, $3, $4)
       `,
-      [fromAccountId, amount, 'debit', transferId]
+      [fromAccountId, amountCents, 'debit', internalTransferId]
     );
     
     await client.query(
       `
-      INSERT INTO transactions (account_id, amount, type)
+      INSERT INTO transactions (account_id, amount_cents, type, transfer_id)
       VALUES ($1, $2, $3, $4)
       `,
-      [toAccountId, amount, 'credit', transferId]
+      [toAccountId, amountCents, 'credit', internalTransferId]
     );
 
     await client.query('COMMIT');
     return { message: 'Transfer successful' };
   } catch(err: any) {
     await client.query('ROLLBACK');
-    return { message: 'Transfer unsuccessful', error: err };
+    throw err;
   } finally {
     client.release();
   }

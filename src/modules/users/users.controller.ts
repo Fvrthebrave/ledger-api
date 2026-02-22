@@ -6,7 +6,7 @@ export async function handleCreateUser(req: Request, res: Response) {
     const { email, password } = req.body;
 
     if(!email) {
-      res.status(400).json({ error: 'Email is required' })
+      return res.status(400).json({ error: 'Email is required' });
     }
 
     const user = await createUser(email, password);
@@ -14,7 +14,7 @@ export async function handleCreateUser(req: Request, res: Response) {
     res.status(201).json(user);
   } catch(err: any) {
     if(err.code === '23505') {
-      return res.status(400).json({ error: 'Email already exists' });
+      return res.status(409).json({ error: 'Email already exists' });
     }
 
     res.status(500).json({ error: 'Internal server error' });

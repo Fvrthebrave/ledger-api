@@ -7,7 +7,7 @@ export async function createUser(email: string, password: string) {
   const result = await pool.query(
     `INSERT INTO users (email, password)
      VALUES ($1, $2)
-     RETURNING id, email, create_at`,
+     RETURNING id, email, created_at`,
     [email, hashedPassword]
   );
 
@@ -15,6 +15,7 @@ export async function createUser(email: string, password: string) {
 }
 
 export async function findUserByEmail(email: string) {
+
   const result = await pool.query(
     `SELECT * FROM users
      WHERE email = $1`,

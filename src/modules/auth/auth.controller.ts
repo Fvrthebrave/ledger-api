@@ -11,13 +11,13 @@ export async function handleLogin(req: Request, res: Response) {
   const user = await findUserByEmail(email);
 
   if(!user) {
-    return res.status(400).json({ error: 'Invalid credentials' });
+    return res.status(401).json({ error: 'Invalid credentials' });
   }
 
   const isValid = await bcrypt.compare(password, user.password);
 
   if(!isValid) {
-    return res.status(400).json({ error: 'Invalid credentials' });
+    return res.status(401).json({ error: 'Invalid credentials' });
   }
 
   const token = jwt.sign(

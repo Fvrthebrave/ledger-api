@@ -1,8 +1,7 @@
-import app from './app'
-import { pool } from './config/db';
+import app from './app';
 
-const PORT = process.env.PORT;
+const PORT = Number(process.env.PORT) || 3001;
 
-app.listen(PORT, async() => {
-  app.listen(3001, () => console.log('Listening'));
+app.listen(PORT, () => {
+  console.log(`Listening on ${PORT}`);
 });

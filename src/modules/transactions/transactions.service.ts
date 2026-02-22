@@ -3,7 +3,7 @@ import { pool } from '../../config/db';
 export async function createTransactionForUser(
   accountId: number,
   userId: number,
-  amount: number,
+  amountCents: number,
   type: 'credit' | 'debit'
 ) {
   const client = await pool.connect();
@@ -11,7 +11,7 @@ export async function createTransactionForUser(
   try {
     await client.query('BEGIN');
 
-    if(!Number.isFinite(amount) || amount <= 0) {
+    if(!Number.isFinite(amountCents) || amountCents <= 0) {
       throw new Error('Invalid transaction amount');
     }
   
@@ -29,14 +29,14 @@ export async function createTransactionForUser(
       UPDATE accounts
       SET balance = balance + $3
       WHERE id = $2
-      and userId = $1
+      and user_id = $1
       RETURNING balance
     `;
 
     const updateResult = await client.query(updateQuery, [
       userId,
       accountId,
-      amount
+      amountCents
     ]);
 
     if(updateResult.rowCount === 0) {
@@ -44,10 +44,10 @@ export async function createTransactionForUser(
     }
   
     const insertResult = await client.query(
-      `INSERT INTO transactions (account_id, amount, type)
+      `INSERT INTO transactions (account_id, amount_cents, type)
        VALUES ($1, $2, $3)
        RETURNING *`,
-       [accountId, amount, type]
+       [accountId, amountCents, type]
     );
   
     await client.query('COMMIT');

@@ -3,8 +3,10 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+const dbUrl = process.env.DATABASE_URL;
+
 export const pool = new Pool({
-  connectionString: process.env.DATABASE_URL
+  connectionString: dbUrl
 });
 
 pool.on('connect', () => {

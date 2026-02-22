@@ -8,7 +8,7 @@ export async function handleCreateTransaction(req: Request, res: Response) {
   try {
     const accountId = Number(req.body.accountId);
     const amount = Number(req.body.amount);
-    const type = req.body.type as 'credit' || 'debit';
+    const type = req.body.type as 'credit' | 'debit';
 
     const userId = req.user!.userId;
 
